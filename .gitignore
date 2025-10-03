@@ -1,0 +1,79 @@
+# -------------------------
+# Python
+# -------------------------
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+develop-eggs/
+.installed.cfg
+*.manifest
+*.spec
+*.lock
+*.log
+
+# Byte-compiled / optimized / DLL files
+*.pyc
+*.pyo
+*.pyd
+
+# Unit test / coverage reports
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+*.swp
+
+# -------------------------
+# Environment & Secrets
+# -------------------------
+.env
+.env.*
+!.env.example    # keep only example env file tracked
+
+# -------------------------
+# Editors & OS
+# -------------------------
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# -------------------------
+# Jupyter / Notebooks
+# -------------------------
+.ipynb_checkpoints/
+*.ipynb
+*.nbconvert.ipynb
+
+# -------------------------
+# Misc
+# -------------------------
+*.bak
+*.tmp
+*.out
+*.log
