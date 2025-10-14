@@ -45,7 +45,7 @@ Get AgenticAI up and running in under 5 minutes:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/<your-username>/AgenticAI-LangGraph-Azure.git
+git clone https://github.com/harshv2013/AgenticAI-LangGraph-Azure.git
 cd AgenticAI-LangGraph-Azure
 
 # 2. Create virtual environment
@@ -84,7 +84,7 @@ Before you begin, ensure you have:
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/<your-username>/AgenticAI-LangGraph-Azure.git
+git clone https://github.com/harshv2013/AgenticAI-LangGraph-Azure.git
 cd AgenticAI-LangGraph-Azure
 ```
 
