@@ -1,12 +1,12 @@
 from langgraph.graph import StateGraph, END
 
 # Import agents
-from agents.planner import plan_research
-from agents.search import run_search
-from agents.synthesizer import synthesize_results
-from agents.writer import compose_report
-from agents.reviewer import review_report
-from agents.delivery import deliver_report
+from research_agents.planner import plan_research
+from research_agents.search import run_search
+from research_agents.synthesizer import synthesize_results
+from research_agents.writer import compose_report
+from research_agents.reviewer import review_report
+from research_agents.delivery import deliver_report
 
 # Create a graph with dict state
 graph = StateGraph(dict)

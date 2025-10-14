@@ -1,59 +1,121 @@
 import asyncio
+import os
 import gradio as gr
+from workflows.general_manager_graph import general_manager_graph
 
-# import the compiled LangGraph app
-from workflows.research_graph import research_graph
 
-async def run_workflow_stream(prompt: str):
+# ===============================
+# 🔁 Unified Runner
+# ===============================
+async def run_manager(prompt=None, file_path=None):
     """
-    Async generator that yields (logs, report) tuples for Gradio streaming.
-    Each yield updates the UI: left = logs, right = report.
+    Unified execution for Research • Realtime • Data Analysis workflows.
+    Returns: (text_output, histogram, line, bar, scatter)
     """
-    logs = ""
-    final_report = ""
+    state = {"input": prompt, "file_path": file_path}
+    final_output = None
+    charts = {}
 
-    # astream yields state snapshots (one top-level key == node name)
-    async for state in research_graph.astream(prompt):
-        # state is like {"planner": {...}} or {"search": {...}}
-        # get node name and its data
-        node = list(state.keys())[0]
-        node_data = state[node]
+    async for update in general_manager_graph.astream(state):
+        node = list(update.keys())[0]
+        data = update[node]
 
-        # append only the new part for readability
-        logs += f"=== {node} ===\n{node_data}\n\n"
+        if node == "executor" and isinstance(data, dict):
+            result = data.get("result", {})
 
-        # update final report if produced
-        if isinstance(node_data, dict) and "report" in node_data:
-            final_report = node_data["report"]
-        elif "report" in state:
-            final_report = state["report"]
+            final_output = (
+                result.get("report")
+                or result.get("message")
+                or result.get("summary")
+                or "⚠️ No result generated."
+            )
+            charts = result.get("charts", {})
 
-        # yield (logs_text, report_text)
-        yield logs, final_report
+    return (
+        final_output,
+        charts.get("histogram"),
+        charts.get("line"),
+        charts.get("bar"),
+        charts.get("scatter"),
+    )
 
-    # ensure a final yield so Gradio shows last state
-    yield logs, final_report
 
+# ===============================
+# 🧠 Gradio App
+# ===============================#004080 
+def launch_app():
+    with gr.Blocks(theme=gr.themes.Soft(), title="AgenticAI General Manager") as app:
+        # --- Header ---
+        gr.Markdown(
+            """
+            <div style="text-align: center; padding: 10px; background-color: #93C5FD; color: white; border-radius: 10px;">
+                <h1>🤖 AgenticAI General Manager</h1>
+                <h3>Unified Multi-Agent Workflow (Research • Data Analysis • Realtime)</h3>
+            </div>
+            """
+        )
 
-def launch_gradio():
-    with gr.Blocks(title="AgenticAI Research (LangGraph)") as app:
-        gr.Markdown("## AgenticAI Research — Planner → Search → Synthesizer → Writer → Reviewer → Delivery")
+        # --- Unified Input + File Upload (like ChatGPT style) ---
+        gr.Markdown("### Type your query or attach a CSV file for analysis")
+
         with gr.Row():
-            prompt_in = gr.Textbox(label="Research prompt", placeholder="e.g. Major health issues and their impact on the Indian economy", lines=2)
-            # keep email optional; delivery currently prints to console in agent
-            email_in = gr.Textbox(label="Email (optional)", placeholder="(not required for demo)", lines=1)
+            with gr.Column(scale=8):
+                input_box = gr.Textbox(
+                    label="Ask your question",
+                    placeholder="e.g. 'Impact of AI on healthcare' or 'What's the weather in Delhi?' or upload a CSV...",
+                    lines=2,
+                )
+            with gr.Column(scale=2, min_width=100):
+                file_upload = gr.File(
+                    label="➕",
+                    type="filepath",
+                    file_types=[".csv"],
+                    elem_id="upload-btn",
+                    interactive=True,
+                )
 
-        with gr.Row():
-            logs_out = gr.Textbox(label="Workflow logs (streaming)", interactive=False, lines=20)
-            report_out = gr.Textbox(label="Final report", interactive=False, lines=20)
+        run_button = gr.Button("🚀 Run Agent", variant="primary")
 
-        run_btn = gr.Button("Run Research Workflow")
+        # --- Output Section ---
+        with gr.Column():
+            output_md = gr.Markdown(label="🧾 Result")
+            hist_img = gr.Image(label="Histogram", visible=False)
+            line_img = gr.Image(label="Revenue Over Time", visible=False)
+            bar_img = gr.Image(label="Profit by Region", visible=False)
+            scatter_img = gr.Image(label="Revenue vs Profit", visible=False)
 
-        # attach the async generator to the button click — streaming outputs to two components
-        run_btn.click(fn=run_workflow_stream, inputs=[prompt_in], outputs=[logs_out, report_out])
+        # --- Run Function ---
+        def run_unified(prompt, file):
+            if file:
+                result, hist, line, bar, scatter = asyncio.run(run_manager(file_path=file))
+            else:
+                result, hist, line, bar, scatter = asyncio.run(run_manager(prompt=prompt))
 
-    app.launch(server_name="127.0.0.1", server_port=7860, share=False)
+            return (
+                result,
+                gr.update(value=hist, visible=bool(hist)),
+                gr.update(value=line, visible=bool(line)),
+                gr.update(value=bar, visible=bool(bar)),
+                gr.update(value=scatter, visible=bool(scatter)),
+            )
+
+        run_button.click(
+            fn=run_unified,
+            inputs=[input_box, file_upload],
+            outputs=[output_md, hist_img, line_img, bar_img, scatter_img],
+        )
+
+        # --- Footer ---
+        gr.Markdown(
+            """
+            <div style="text-align: center; padding: 10px; margin-top: 20px; font-size: 14px; color: gray;">
+                Powered by <b>LangGraph</b> + <b>Azure OpenAI</b> | © 2025 AgenticAI
+            </div>
+            """
+        )
+
+    app.launch(server_name="127.0.0.1", server_port=7863, share=False)
 
 
 if __name__ == "__main__":
-    launch_gradio()
+    launch_app()

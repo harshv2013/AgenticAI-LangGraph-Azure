@@ -2,13 +2,6 @@ import os
 from services.azure_client import chat_completion
 
 
-# def compose_report(state: dict):
-#     print(f"compose_report called: {state}\n\n")
-#     report = f"# Research Report\n\nTopic: {state['user_prompt']}\n\n{state['synthesis']['summary']}\n"
-#     state["report"] = report
-#     print(f"compose_report end: {state}\n\n")
-#     return state
-
 def compose_report(state: dict) -> dict:
     user_prompt = state["user_prompt"]
     summary = state["synthesis"]["summary"]
