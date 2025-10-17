@@ -1,121 +1,218 @@
 import asyncio
 import os
+import shutil
+from pathlib import Path
 import gradio as gr
 from workflows.general_manager_graph import general_manager_graph
+from workflows.data_analysis_graph import data_analysis_graph
 
 
-# ===============================
-# 🔁 Unified Runner
-# ===============================
+# ======================================================
+# 🔁 1. Unified Manager Runner
+# ======================================================
 async def run_manager(prompt=None, file_path=None):
     """
     Unified execution for Research • Realtime • Data Analysis workflows.
-    Returns: (text_output, histogram, line, bar, scatter)
+    Automatically routes based on input type.
     """
-    state = {"input": prompt, "file_path": file_path}
-    final_output = None
     charts = {}
+    final_output = None
 
-    async for update in general_manager_graph.astream(state):
+    # --- Auto-route between CSV & Text ---
+    if file_path and os.path.exists(file_path):
+        graph = data_analysis_graph
+        state = {"file_path": file_path, "question": prompt or ""}
+        print("📊 Routing → data_analysis_graph")
+    else:
+        graph = general_manager_graph
+        state = {"input": prompt, "file_path": None}
+        print("🧠 Routing → general_manager_graph")
+
+    # --- Stream updates ---
+    async for update in graph.astream(state):
         node = list(update.keys())[0]
         data = update[node]
 
-        if node == "executor" and isinstance(data, dict):
-            result = data.get("result", {})
+        # Data Analysis
+        if graph is data_analysis_graph:
+            if node == "executor" and isinstance(data, dict):
+                charts = data.get("charts", {})
+            elif node == "report" and isinstance(data, dict):
+                final_output = (
+                    data.get("report")
+                    or data.get("summary")
+                    or "⚠️ No report generated."
+                )
 
-            final_output = (
-                result.get("report")
-                or result.get("message")
-                or result.get("summary")
-                or "⚠️ No result generated."
-            )
-            charts = result.get("charts", {})
+        # Research / Realtime
+        elif graph is general_manager_graph:
+            if node == "executor" and isinstance(data, dict):
+                result = data.get("result", {})
+                final_output = (
+                    result.get("report")
+                    or result.get("message")
+                    or result.get("summary")
+                    or "⚠️ No result generated."
+                )
+                charts = result.get("charts", {})
 
-    return (
-        final_output,
-        charts.get("histogram"),
-        charts.get("line"),
-        charts.get("bar"),
-        charts.get("scatter"),
-    )
+    return final_output or "⚠️ No output generated.", charts
 
 
-# ===============================
-# 🧠 Gradio App
-# ===============================#004080 
+# ======================================================
+# 🚀 2. Unified Runner Wrapper for Gradio
+# ======================================================
+def run_unified(prompt, file):
+    """
+    Synchronous Gradio wrapper that runs the async LangGraph workflow,
+    serves chart files, and returns results dynamically.
+    """
+    async def _async_run():
+        return await run_manager(prompt=prompt, file_path=file)
+
+    try:
+        result, charts = asyncio.run(_async_run())
+    except RuntimeError:
+        loop = asyncio.get_event_loop()
+        result, charts = loop.run_until_complete(_async_run())
+
+    # ✅ Copy chart files into Gradio-served directory
+    serve_dir = Path("gradio_charts")
+    serve_dir.mkdir(exist_ok=True)
+
+    served_charts = []
+    for _, path in charts.items():
+        if path and os.path.exists(path):
+            new_path = serve_dir / Path(path).name
+            shutil.copy2(path, new_path)
+            served_charts.append(str(new_path))
+
+    print(f"✅ Served {len(served_charts)} chart(s): {served_charts}")
+
+    # Return Markdown report + dynamic chart list
+    return result, served_charts
+
+
+# ======================================================
+# 🎨 3. Gradio Interface
+# =======================================================
 def launch_app():
-    with gr.Blocks(theme=gr.themes.Soft(), title="AgenticAI General Manager") as app:
+    with gr.Blocks(
+        theme=gr.themes.Soft(primary_hue="blue"),
+        title="AgenticAI General Manager",
+        css="""
+        /* ====== Custom Gallery Styling ====== */
+        #gallery-box {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)) !important;
+            gap: 24px !important;
+            justify-items: center;
+            align-items: start;
+            padding: 20px !important;
+        }
+
+        /* Override internal gallery image containers */
+        #gallery-box .thumbnail-item, 
+        #gallery-box .image-container, 
+        #gallery-box img {
+            width: 100% !important;
+            height: auto !important;
+            max-height: 480px !important;
+            object-fit: contain !important;
+            border-radius: 10px !important;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15) !important;
+            transition: transform 0.2s ease-in-out !important;
+        }
+
+        #gallery-box img:hover {
+            transform: scale(1.02);
+        }
+
+        /* Center report */
+        #report-box {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        /* Hide scrollbar in gallery */
+        #gallery-box::-webkit-scrollbar {
+            display: none;
+        }
+        """
+    ) as app:
         # --- Header ---
-        gr.Markdown(
+        gr.HTML(
             """
-            <div style="text-align: center; padding: 10px; background-color: #93C5FD; color: white; border-radius: 10px;">
+            <div style="text-align: center; padding: 14px; 
+                        # background: linear-gradient(90deg, #93C5FD, #60A5FA);
+                        background: #93C5FD; 
+                        color: white; border-radius: 12px; margin-bottom: 14px;">
                 <h1>🤖 AgenticAI General Manager</h1>
-                <h3>Unified Multi-Agent Workflow (Research • Data Analysis • Realtime)</h3>
+                <p>Unified Multi-Agent Workflow — Research • Data Analysis • Realtime</p>
             </div>
             """
         )
 
-        # --- Unified Input + File Upload (like ChatGPT style) ---
-        gr.Markdown("### Type your query or attach a CSV file for analysis")
+        # --- Input Section ---
+        gr.Markdown("### 💬 Ask a Question or Upload a CSV File")
 
         with gr.Row():
             with gr.Column(scale=8):
                 input_box = gr.Textbox(
-                    label="Ask your question",
-                    placeholder="e.g. 'Impact of AI on healthcare' or 'What's the weather in Delhi?' or upload a CSV...",
+                    label="Your Query",
+                    placeholder="e.g. 'Show revenue trends' or 'Impact of AI on education'",
                     lines=2,
                 )
-            with gr.Column(scale=2, min_width=100):
+            with gr.Column(scale=2):
                 file_upload = gr.File(
-                    label="➕",
+                    label="📂 Upload CSV",
                     type="filepath",
                     file_types=[".csv"],
-                    elem_id="upload-btn",
                     interactive=True,
                 )
 
         run_button = gr.Button("🚀 Run Agent", variant="primary")
 
         # --- Output Section ---
-        with gr.Column():
-            output_md = gr.Markdown(label="🧾 Result")
-            hist_img = gr.Image(label="Histogram", visible=False)
-            line_img = gr.Image(label="Revenue Over Time", visible=False)
-            bar_img = gr.Image(label="Profit by Region", visible=False)
-            scatter_img = gr.Image(label="Revenue vs Profit", visible=False)
+        output_md = gr.Markdown(label="📄 Analysis Report", elem_id="report-box")
 
-        # --- Run Function ---
-        def run_unified(prompt, file):
-            if file:
-                result, hist, line, bar, scatter = asyncio.run(run_manager(file_path=file))
-            else:
-                result, hist, line, bar, scatter = asyncio.run(run_manager(prompt=prompt))
+        # ✅ Gallery: clean, responsive grid
+        gallery = gr.Gallery(
+            label="📊 Generated Charts",
+            elem_id="gallery-box",
+            columns=[2],
+            height="auto",
+            show_label=True,
+            visible=False,
+            allow_preview=True,  # zoom on click
+        )
 
-            return (
-                result,
-                gr.update(value=hist, visible=bool(hist)),
-                gr.update(value=line, visible=bool(line)),
-                gr.update(value=bar, visible=bool(bar)),
-                gr.update(value=scatter, visible=bool(scatter)),
-            )
+        # --- Run Logic ---
+        def _run(prompt, file):
+            result, served_charts = run_unified(prompt, file)
+            return result, gr.update(value=served_charts, visible=bool(served_charts))
 
         run_button.click(
-            fn=run_unified,
+            fn=_run,
             inputs=[input_box, file_upload],
-            outputs=[output_md, hist_img, line_img, bar_img, scatter_img],
+            outputs=[output_md, gallery],
         )
 
         # --- Footer ---
-        gr.Markdown(
+        gr.HTML(
             """
-            <div style="text-align: center; padding: 10px; margin-top: 20px; font-size: 14px; color: gray;">
-                Powered by <b>LangGraph</b> + <b>Azure OpenAI</b> | © 2025 AgenticAI
+            <div style="text-align: center; padding: 10px; margin-top: 30px; 
+                        font-size: 14px; color: gray;">
+                Built with ❤️ using <b>LangGraph</b> + <b>Azure OpenAI</b>  
+                <br>© 2025 AgenticAI
             </div>
             """
         )
 
     app.launch(server_name="127.0.0.1", server_port=7863, share=False)
 
+# =======================================================
 
+# ======================================================
 if __name__ == "__main__":
     launch_app()
