@@ -6,137 +6,124 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Initialize results dict
+from datetime import datetime
+
+# Paths & setup
+DATA_PATH = "/private/var/folders/s5/myv5w8gx3632hwpjscfthjfh0000gn/T/gradio/33b22b978a72e21240ab9125cb59ce5295c6128abebd6a15493e9ad1fe522788/sales_data.csv"
+CHART_DIR = "./"
 results = {
     "insights": [],
     "charts": [],
     "errors": []
 }
 
-# Dataset path
-dataset_path = r"C:\Users\HarshVardhan\AppData\Local\Temp\gradio\219845c9196d8c8c1810a31b197f1063ff9be9327bc720a763268d36e7be9357\sales_data.csv"
+# Helper to save chart and register filename
+def save_chart(fig, filename):
+    path = os.path.join(CHART_DIR, filename)
+    fig.savefig(path, bbox_inches='tight')
+    plt.close(fig)
+    results['charts'].append(filename)
 
-# Prepare a folder for charts
-charts_dir = "charts"
-os.makedirs(charts_dir, exist_ok=True)
-
-# Load dataset
+# Load Data
 try:
-    df = pd.read_csv(dataset_path)
-    results["insights"].append(f"Dataset loaded: {dataset_path}")
-    results["insights"].append(f"Shape: {df.shape[0]} rows, {df.shape[1]} columns")
-    results["insights"].append("Columns: " + ", ".join(df.columns))
+    df = pd.read_csv(DATA_PATH)
+    results['insights'].append(f"Loaded data with {df.shape[0]} rows and {df.shape[1]} columns.")
 except Exception as e:
-    results["errors"].append(f"Failed to load CSV: {str(e)}")
+    results['errors'].append(f"Error loading dataset: {e}")
     print(json.dumps(results, indent=2))
     exit()
 
-# 1. Histogram (first numeric column)
-numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-histogram_chart_file = ""
+# Ensure non-empty
+if df.empty:
+    results['errors'].append("The dataset is empty.")
+    print(json.dumps(results, indent=2))
+    exit()
+
+# ----- 1. Histogram of First Numeric Column -----
+numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
 if numeric_cols:
-    first_numeric = numeric_cols[0]
-    plt.figure(figsize=(6,4))
-    plt.hist(df[first_numeric].dropna(), bins=20, color="skyblue", edgecolor="black")
-    plt.title(f"Histogram of {first_numeric}")
-    plt.xlabel(first_numeric)
-    plt.ylabel("Frequency")
-    histogram_chart_file = os.path.join(charts_dir, f"hist_{first_numeric}.png")
-    plt.tight_layout()
-    plt.savefig(histogram_chart_file)
-    plt.close()
-    results["charts"].append(histogram_chart_file)
-    results["insights"].append(f"Histogram of '{first_numeric}' created. Mean: {df[first_numeric].mean():.2f}, Std: {df[first_numeric].std():.2f}, Min: {df[first_numeric].min()}, Max: {df[first_numeric].max()}, Median: {df[first_numeric].median()}")
+    col = numeric_cols[0]
+    fig, ax = plt.subplots()
+    df[col].hist(ax=ax, bins=20, color='skyblue', edgecolor='black')
+    ax.set_title(f'Histogram of {col}')
+    ax.set_xlabel(col)
+    ax.set_ylabel('Frequency')
+    fname = f"histogram_{col}.png"
+    save_chart(fig, fname)
+    results['insights'].append(f"Showing distribution for '{col}' (first numeric column). Mean={df[col].mean():.2f}, Std={df[col].std():.2f}.")
 else:
-    results["errors"].append("No numeric column found for histogram.")
+    results['errors'].append("No numeric columns found for histogram.")
 
-# 2. Revenue over time
-revenue_over_time_chart_file = ""
-date_col = None
-for col in ["Date", "date", "OrderDate", "Order Date", "Time", "Datetime", "datetime"]:
-    if col in df.columns:
-        date_col = col
-        break
+# ----- 2. Revenue over Time -----
+date_cols = [c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()]
+revenue_possible = [c for c in df.columns if 'revenue' in c.lower()]
 
-revenue_col = None
-for col in ["Revenue", "revenue", "Sales", "sales"]:
-    if col in df.columns:
-        revenue_col = col
-        break
+revenue_chart_drawn = False
+if date_cols and revenue_possible:
+    date_col = date_cols[0]
+    revenue_col = revenue_possible[0]
 
-if date_col and revenue_col:
-    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
-    time_group = df.dropna(subset=[date_col]).groupby(df[date_col].dt.to_period("M"))[revenue_col].sum()
-    plt.figure(figsize=(8,4))
-    time_group.sort_index().plot(marker='o')
-    plt.title(f"{revenue_col} over Time")
-    plt.xlabel("Time (by Month)")
-    plt.ylabel(revenue_col)
-    plt.tight_layout()
-    revenue_over_time_chart_file = os.path.join(charts_dir, f"{revenue_col}_over_time.png")
-    plt.savefig(revenue_over_time_chart_file)
-    plt.close()
-    results["charts"].append(revenue_over_time_chart_file)
-    results["insights"].append(f"Revenue over time chart created. Peak revenue: {time_group.max():.2f} at {time_group.idxmax()}. Overall revenue: {df[revenue_col].sum():.2f}")
+    # Try to parse date
+    try:
+        df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+        df_filtered = df.dropna(subset=[date_col, revenue_col])
+        df_grouped = df_filtered.groupby(df_filtered[date_col].dt.date)[revenue_col].sum()
+        if not df_grouped.empty:
+            fig, ax = plt.subplots(figsize=(8,4))
+            df_grouped.plot(ax=ax)
+            ax.set_title('Revenue over Time')
+            ax.set_xlabel('Date')
+            ax.set_ylabel('Revenue')
+            fname = "revenue_over_time.png"
+            save_chart(fig, fname)
+            results['insights'].append("Visualized revenue trend over time.")
+            revenue_chart_drawn = True
+        else:
+            results['errors'].append("No valid data after filtering for revenue over time.")
+    except Exception as e:
+        results['errors'].append(f"Error drawing revenue over time: {e}")
 else:
-    if not date_col:
-        results["errors"].append("No suitable date/time column found for revenue over time.")
-    if not revenue_col:
-        results["errors"].append("No suitable revenue column found for revenue over time.")
+    results['errors'].append("Missing 'Date'/'Time' or 'Revenue' columns for revenue trend.")
 
-# 3. Profit by Region
-region_col = None
-for col in ["Region", "region", "Territory", "Market"]:
-    if col in df.columns:
-        region_col = col
-        break
+# ----- 3. Profit by Region -----
+region_col = next((c for c in df.columns if 'region' in c.lower()), None)
+profit_col = next((c for c in df.columns if 'profit' in c.lower()), None)
 
-profit_col = None
-for col in ["Profit", "profit", "Net Profit", "net profit"]:
-    if col in df.columns:
-        profit_col = col
-        break
-
-profit_by_region_chart_file = ""
 if region_col and profit_col:
-    region_profit = df.groupby(region_col)[profit_col].sum().sort_values(ascending=False)
-    plt.figure(figsize=(7,4))
-    region_profit.plot(kind='bar', color="seagreen")
-    plt.title(f"Total Profit by {region_col}")
-    plt.xlabel(region_col)
-    plt.ylabel(profit_col)
-    plt.tight_layout()
-    profit_by_region_chart_file = os.path.join(charts_dir, f"profit_by_{region_col}.png")
-    plt.savefig(profit_by_region_chart_file)
-    plt.close()
-    results["charts"].append(profit_by_region_chart_file)
-    top_region = region_profit.idxmax()
-    results["insights"].append(f"Profit by region chart created. Top region: {top_region} with profit {region_profit.max():.2f}. Regions: {region_profit.index.tolist()}.")
+    try:
+        df_grouped = df.groupby(region_col)[profit_col].sum().sort_values(ascending=False)
+        fig, ax = plt.subplots(figsize=(8,4))
+        df_grouped.plot(kind='bar', color='seagreen', ax=ax)
+        ax.set_title('Total Profit by Region')
+        ax.set_xlabel('Region')
+        ax.set_ylabel('Profit')
+        fname = "profit_by_region.png"
+        save_chart(fig, fname)
+        top_regions = df_grouped.head(3).to_dict()
+        results['insights'].append(f"Top regions by profit: {top_regions}")
+    except Exception as e:
+        results['errors'].append(f"Error visualizing profit by region: {e}")
 else:
-    if not region_col:
-        results["errors"].append("No suitable region column found for profit by region.")
-    if not profit_col:
-        results["errors"].append("No suitable profit column found for profit by region.")
+    results['errors'].append("Missing 'Region' and/or 'Profit' columns for profit by region analysis.")
 
-# 4. Revenue vs Profit scatter
-revenue_vs_profit_chart_file = ""
-if revenue_col and profit_col:
-    plt.figure(figsize=(6,5))
-    plt.scatter(df[revenue_col], df[profit_col], alpha=0.6, color="darkorange")
-    plt.title(f"{revenue_col} vs {profit_col}")
-    plt.xlabel(revenue_col)
-    plt.ylabel(profit_col)
-    plt.tight_layout()
-    revenue_vs_profit_chart_file = os.path.join(charts_dir, f"{revenue_col}_vs_{profit_col}.png")
-    plt.savefig(revenue_vs_profit_chart_file)
-    plt.close()
-    results["charts"].append(revenue_vs_profit_chart_file)
-    correlation = df[[revenue_col, profit_col]].corr().iloc[0,1]
-    results["insights"].append(f"Revenue vs Profit scatter created. Correlation coefficient: {correlation:.2f}")
+# ----- 4. Revenue vs Profit Scatter -----
+if revenue_possible and profit_col:
+    try:
+        revenue_col = revenue_possible[0]
+        df_scatter = df.dropna(subset=[revenue_col, profit_col])
+        fig, ax = plt.subplots()
+        ax.scatter(df_scatter[revenue_col], df_scatter[profit_col], alpha=0.7, edgecolor='k')
+        ax.set_title('Revenue vs Profit')
+        ax.set_xlabel(revenue_col)
+        ax.set_ylabel(profit_col)
+        fname = "revenue_vs_profit_scatter.png"
+        save_chart(fig, fname)
+        corr = df_scatter[revenue_col].corr(df_scatter[profit_col])
+        results['insights'].append(f"Correlation between revenue and profit: {corr:.2f}")
+    except Exception as e:
+        results['errors'].append(f"Error plotting Revenue vs Profit: {e}")
 else:
-    if not revenue_col:
-        results["errors"].append("No suitable revenue column found for revenue vs profit scatter.")
-    if not profit_col:
-        results["errors"].append("No suitable profit column found for revenue vs profit scatter.")
+    results['errors'].append("Missing 'Revenue' and/or 'Profit' for scatter plot.")
 
+# ----- Final output -----
 print(json.dumps(results, indent=2))

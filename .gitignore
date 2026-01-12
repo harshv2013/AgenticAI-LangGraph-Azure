@@ -42,7 +42,7 @@ env.bak/
 # -------------------------
 .env
 .env.*
-!.env.example    # keep only example env file tracked
+!.env.example
 
 # -------------------------
 # Editors & OS
