@@ -72,6 +72,7 @@
 # if __name__ == "__main__":
 #     asyncio.run(run_analysis("sales_data.csv", "Show me revenue over time and a scatter of revenue vs profit"))
 
+# Main code start here
 
 import asyncio
 import os
